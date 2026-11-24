@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { DollarSign, FileText, Search, Users, Clock3, Plus } from "lucide-react";
+import { DollarSign, FileText, Search, Users, Clock3, Plus, Pencil } from "lucide-react";
 import type { InvoiceReconciliation } from "@/lib/finance/invoice-reconciliation";
 import type { InvoiceRequestRow } from "./finance-view";
 import type { getReceivablesAging } from "@/server/finance/aging";
@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { shMonthDay, shParts } from "@/lib/ui/sh-time";
 import { moneyKindLabels, type MoneyKind } from "@/lib/finance/ledger-labels";
 import { actionErrorMessage } from "@/lib/action-error";
+import { EditFeeEntrySheet, type EditableFeeEntry } from "@/app/(app)/matters/[id]/_components/finance-forms";
 
 type Entry = {
   moneyKind?: MoneyKind;
@@ -112,6 +113,7 @@ export function FinanceViewV4({ entries, monthly, aging, stats, invoiceRequests,
   const [typeFilter, setTypeFilter] = useState<Entry["type"] | undefined>(undefined);
   const [invoiceCreateOpen, setInvoiceCreateOpen] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<EditableFeeEntry | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const router = useRouter();
 
@@ -346,6 +348,7 @@ export function FinanceViewV4({ entries, monthly, aging, stats, invoiceRequests,
                       <th style={{ width: 84 }}>方式</th>
                       <th style={{ width: 64 }}>经手</th>
                       <th style={{ width: 80 }}>状态</th>
+                      <th style={{ width: 72 }}>操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -374,6 +377,30 @@ export function FinanceViewV4({ entries, monthly, aging, stats, invoiceRequests,
                               <span className="badge b-green" title="关联已签署合同或已登记发票号，不可物理删除">受保护</span>
                             ) : (
                               <span className="badge b-white" title="尚未关联已签署合同或发票号">可更正</span>
+                            )}
+                          </td>
+                          <td>
+                            {canWrite && !stats.ledgerReady && !e.confirmed &&
+                              e.type !== "RECEIVED" && e.type !== "COMMISSION" ? (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setEditingEntry({
+                                  id: e.id,
+                                  amount: e.amount,
+                                  occurredAt: e.occurredAt,
+                                  invoiceNo: e.invoiceNo,
+                                  payerOrPayee: e.payerOrPayee,
+                                  method: e.method,
+                                  note: e.note
+                                })}
+                                aria-label="更正记录"
+                              >
+                                <Pencil aria-hidden />
+                                更正
+                              </button>
+                            ) : (
+                              <span className="t-faint">—</span>
                             )}
                           </td>
                         </tr>
@@ -533,6 +560,7 @@ export function FinanceViewV4({ entries, monthly, aging, stats, invoiceRequests,
 
       <InvoiceCreateDialog open={invoiceCreateOpen} onOpenChange={setInvoiceCreateOpen} canCreateUnlinkedInvoice={canApproveInvoice} />
       {canWrite ? <RecordFeeLauncher open={recordOpen} onOpenChange={setRecordOpen} /> : null}
+      <EditFeeEntrySheet open={!!editingEntry} onOpenChange={(o) => { if (!o) setEditingEntry(null); }} entry={editingEntry} />
     </div>
   );
 }

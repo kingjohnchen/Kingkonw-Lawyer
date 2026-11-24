@@ -29,13 +29,16 @@ import { RadioChips } from "@/components/ui/radio-chips";
 import {
   billingCreateSchema,
   feeEntryCreateSchema,
+  feeEntryUpdateSchema,
   type BillingCreateInput,
-  type FeeEntryCreateInput
+  type FeeEntryCreateInput,
+  type FeeEntryUpdateInput
 } from "@/server/finance/schemas";
 import {
   getMatterFinance,
   createBilling,
   createFeeEntry,
+  updateFeeEntry,
   listMatterInvoiceRequests
 } from "@/server/finance/actions";
 import { uploadDocument } from "@/server/documents/actions";
@@ -113,7 +116,7 @@ export function AddBillingSheet({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-1 flex-col">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 space-y-3 overflow-y-auto px-6 py-5">
             <Field label="合同名称" required error={errors.title?.message}>
               <Input
@@ -285,7 +288,7 @@ export function AddFeeEntrySheet({
           <DialogTitle>新增收付记录</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-1 flex-col">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 space-y-3 overflow-y-auto px-6 py-5">
             <Field label="类型" required>
               <RadioChips
@@ -434,6 +437,118 @@ export function AddFeeEntrySheet({
             <Button type="submit" disabled={isPending} className="gap-1.5">
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {type === "RECEIVED" ? "记录实收" : "保存"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============ EditFeeEntrySheet ============
+
+export type EditableFeeEntry = {
+  id: string;
+  amount: number;
+  occurredAt: Date;
+  invoiceNo: string | null;
+  payerOrPayee: string | null;
+  method: string | null;
+  note: string | null;
+};
+
+export function EditFeeEntrySheet({
+  open,
+  onOpenChange,
+  entry
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  entry: EditableFeeEntry | null;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors }
+  } = useForm<FeeEntryUpdateInput>({
+    resolver: zodResolver(feeEntryUpdateSchema),
+    defaultValues: {
+      id: "",
+      amount: 0,
+      occurredAt: shDayKey(new Date()) as unknown as Date,
+      invoiceNo: "",
+      payerOrPayee: "",
+      method: "",
+      note: ""
+    }
+  });
+
+  useEffect(() => {
+    if (!open || !entry) return;
+    reset({
+      id: entry.id,
+      amount: Number(entry.amount),
+      occurredAt: shDayKey(new Date(entry.occurredAt)) as unknown as Date,
+      invoiceNo: entry.invoiceNo ?? "",
+      payerOrPayee: entry.payerOrPayee ?? "",
+      method: entry.method ?? "",
+      note: entry.note ?? ""
+    });
+  }, [open, entry, reset]);
+
+  function onSubmit(values: FeeEntryUpdateInput) {
+    startTransition(async () => {
+      try {
+        const res = await updateFeeEntry(values);
+        if (!res.ok) {
+          toast.error(res.error ?? "更正失败");
+          return;
+        }
+        toast.success("收付记录已更正");
+        onOpenChange(false);
+      } catch (err) {
+        toast.error("更正失败", { description: actionErrorMessage(err) });
+      }
+    });
+  }
+
+  return (
+    <Dialog open={open && !!entry} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[88vh] w-[92vw] max-w-lg flex-col gap-0 p-0">
+        <DialogHeader className="border-b border-border px-6 py-4">
+          <DialogTitle>更正收付记录</DialogTitle>
+          <DialogDescription className="text-xs">
+            实收登记不可在此改额；待确认请退回重登，已入账请走财务更正。
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 space-y-3 overflow-y-auto px-6 py-5">
+            <Field label="金额（元）" required error={errors.amount?.message}>
+              <Input type="number" step="0.01" className="font-mono tabular" {...register("amount", { valueAsNumber: true })} />
+            </Field>
+            <Field label="发生日期" required error={errors.occurredAt?.message}>
+              <Input type="date" {...register("occurredAt")} />
+            </Field>
+            <Field label="对方户名" error={errors.payerOrPayee?.message}>
+              <Input {...register("payerOrPayee")} />
+            </Field>
+            <Field label="方式" error={errors.method?.message}>
+              <Input {...register("method")} />
+            </Field>
+            <Field label="发票号" error={errors.invoiceNo?.message}>
+              <Input className="font-mono" {...register("invoiceNo")} />
+            </Field>
+            <Field label="备注" error={errors.note?.message}>
+              <Textarea rows={2} {...register("note")} />
+            </Field>
+          </div>
+          <DialogFooter className="border-t border-border px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>取消</Button>
+            <Button type="submit" disabled={isPending} className="gap-1.5">
+              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              保存更正
             </Button>
           </DialogFooter>
         </form>

@@ -88,7 +88,13 @@ export function ApprovalInbox({ data, initialSelection }: { data: Data; initialS
         if (detail.task === "stamp") {
           const fd = new FormData(); fd.set("id", r.id); if (file) fd.set("stampedDoc", file); await stampSealRequest(fd);
         } else if (r.action === "INTAKE_APPROVE") {
-          if (decision === "approve") await convertIntakeToMatter(r.id, note);
+          if (decision === "approve") {
+            const res = await convertIntakeToMatter(r.id, note);
+            if (!res.ok) {
+              toast.error(res.error);
+              return;
+            }
+          }
           else if (decision === "revision") await markIntakeNeedsRevision({ id: r.id, reason: note });
           else await declineIntake({ id: r.id, reason: note });
         } else if (r.action === "DOCUMENT_APPROVE") {

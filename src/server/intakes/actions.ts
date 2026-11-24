@@ -131,15 +131,15 @@ function getCheckedConflictQueries(payload: Prisma.JsonValue) {
     .filter((q): q is IntakeConflictQuery => !!q);
 }
 
-function assertConflictReviewAllowsConversion(intake: IntakeConflictGateInput) {
+function checkConflictReviewForConversion(intake: IntakeConflictGateInput): string | null {
   const expectedQueries = buildExpectedConflictQueries(intake);
   if (expectedQueries.length === 0) {
-    throw new ActionError("请先补充委托方或相对方，再运行利益冲突检索");
+    return "请先补充委托方或相对方，再运行利益冲突检索";
   }
 
   const latestCheck = intake.conflictChecks[0];
   if (!latestCheck) {
-    throw new ActionError("转为正式案件前必须先运行利益冲突检索");
+    return "转为正式案件前必须先运行利益冲突检索";
   }
 
   const checkedKeys = new Set(
@@ -147,32 +147,31 @@ function assertConflictReviewAllowsConversion(intake: IntakeConflictGateInput) {
   );
   const missingQueries = expectedQueries.filter((q) => !checkedKeys.has(conflictQueryKey(q)));
   if (missingQueries.length > 0) {
-    throw new ActionError(
-      `收案当事人已变更，请重新运行利益冲突检索。缺少：${missingQueries
-        .map(formatConflictQuery)
-        .join("、")}`
-    );
+    return `收案当事人已变更，请重新运行利益冲突检索。缺少：${missingQueries
+      .map(formatConflictQuery)
+      .join("、")}`;
   }
 
   if (latestCheck.conclusion === "PENDING") {
-    throw new ActionError("利益冲突检索还没有结论，请先标记是否可承接");
+    return "利益冲突检索还没有结论，请先标记是否可承接";
   }
   if (latestCheck.conclusion === "NEED_INFO") {
-    throw new ActionError("利益冲突检索结论为信息不足，不能转为正式案件");
+    return "利益冲突检索结论为信息不足，不能转为正式案件";
   }
   if (latestCheck.conclusion === "SAME_SUBJECT") {
-    throw new ActionError("已确认存在利益冲突，不能直接转为正式案件");
+    return "已确认存在利益冲突，不能直接转为正式案件";
   }
   if (latestCheck.conclusion !== "DIFFERENT") {
-    throw new ActionError("利益冲突检索结论异常，请重新检索后再转为正式案件");
+    return "利益冲突检索结论异常，请重新检索后再转为正式案件";
   }
 
   const hasHighRiskHit = latestCheck.hits.some(
     (h) => h.severity === "HIGH" || h.severity === "BLOCKING"
   );
   if (hasHighRiskHit && !latestCheck.note?.trim()) {
-    throw new ActionError("存在高风险或阻塞命中，请在冲突结论备注中写明排除理由或书面同意留痕");
+    return "存在高风险或阻塞命中，请在冲突结论备注中写明排除理由或书面同意留痕";
   }
+  return null;
 }
 
 export async function listIntakes(input: Partial<IntakeListQuery> = {}) {
@@ -661,9 +660,10 @@ export async function convertIntakeToMatter(intakeId: string, note?: string) {
       documents: { select: { id: true } }
     }
   });
-  if (!intake) throw new ActionError("Intake 不存在");
-  if (intake.status !== "PENDING_CONFIRMATION") throw new ActionError("仅待审批收案可转为正式案件");
-  assertConflictReviewAllowsConversion(intake);
+  if (!intake) return { ok: false as const, error: "收案记录不存在" };
+  if (intake.status !== "PENDING_CONFIRMATION") return { ok: false as const, error: "仅待审批收案可转为正式案件" };
+  const conflictError = checkConflictReviewForConversion(intake);
+  if (conflictError) return { ok: false as const, error: conflictError };
 
   const { generateInternalCode, generateFirmCaseNo } = await import("@/server/matters/code-generator");
   const internalCode = await generateInternalCode(intake.category);
@@ -890,5 +890,5 @@ export async function convertIntakeToMatter(intakeId: string, note?: string) {
   revalidatePath("/approvals");
   revalidatePath(`/intakes/${intake.id}`);
   revalidatePath("/matters");
-  return { ok: true, matterId: matter.id, internalCode };
+  return { ok: true as const, matterId: matter.id, internalCode };
 }

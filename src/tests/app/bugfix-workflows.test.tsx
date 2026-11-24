@@ -17,6 +17,7 @@ vi.mock("@/server/archive/actions", () => ({ approveArchiveRecord: vi.fn(), reje
 vi.mock("@/server/seals/actions", () => ({ approveSealRequest: vi.fn(), rejectSealRequest: vi.fn(), stampSealRequest: vi.fn() }));
 import { approveArchiveRecord } from "@/server/archive/actions";
 import { stampSealRequest } from "@/server/seals/actions";
+import { convertIntakeToMatter } from "@/server/intakes/actions";
 import { ApprovalInbox } from "@/app/(app)/approvals/approval-inbox";
 import { AuditView } from "@/app/(admin)/admin/audit/_components/audit-view";
 import type { listApprovalWorkspace } from "@/server/approval-permissions/inbox";
@@ -27,6 +28,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   detail.mockResolvedValue({ fields: [{ label: "开票抬头", value: "测试申请" }], attachments: [], history: [], task: "approve", status: "PENDING", title: "测试申请", requester: "申请人", submittedAt: new Date() });
   approve.mockResolvedValue({ ok: true });
+  vi.mocked(convertIntakeToMatter).mockResolvedValue({ ok: true as const, matterId: "matter-test", internalCode: "C-TEST" });
 });
 afterEach(cleanup);
 

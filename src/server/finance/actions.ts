@@ -31,9 +31,11 @@ import {
 import {
   billingCreateSchema,
   feeEntryCreateSchema,
+  feeEntryUpdateSchema,
   commissionPlanSetSchema,
   type BillingCreateInput,
   type FeeEntryCreateInput,
+  type FeeEntryUpdateInput,
   type CommissionPlanSetInput
 } from "./schemas";
 import { notifyRoleApprovers } from "@/server/notifications/approval";
@@ -401,6 +403,96 @@ export async function deleteFeeEntry(id: string) {
     detail: { matterId: entry.matterId, type: entry.type }
   });
   await revalidateMatter(entry.matterId);
+  revalidatePath("/finance");
+  revalidatePath("/approvals");
+  return { ok: true };
+}
+
+/**
+ * 更正一条尚未对外确认的收付记录（金额、日期、对方、方式、发票号、备注）。
+ * 实收一旦登记即进入待确认/已入账链，金额更正必须走退回重登或财务更正，
+ * 因此这里只开放 RECEIVABLE / REFUND / COST 且未关联已签署合同、未登记发票号的记录。
+ */
+export async function updateFeeEntry(input: FeeEntryUpdateInput) {
+  const session = await requireSession("finance.write");
+  if (await financeLedgerReady(prisma)) {
+    throw new ActionError("已启用台账的记录请通过应收与收款分配页面或财务更正处理");
+  }
+  if (session.user.role !== "CUSTOM" && !isManager(session.user.role) && session.user.role !== "FINANCE") {
+    throw new ActionError("仅合伙人、财务或经授权的自定义角色可更正收付记录");
+  }
+
+  const data = feeEntryUpdateSchema.parse(input);
+  const existing = await prisma.feeEntry.findUnique({
+    where: { id: data.id },
+    select: {
+      matterId: true,
+      type: true,
+      confirmState: true,
+      parentFeeEntryId: true,
+      invoiceNo: true,
+      billing: { select: { signedAt: true } }
+    }
+  });
+  if (!existing) return { ok: false, error: "收付记录不存在" };
+
+  if (existing.billing?.signedAt) {
+    throw new ActionError("该记录关联已签署合同，不可直接更正");
+  }
+  if (existing.invoiceNo && existing.invoiceNo !== (data.invoiceNo || null)) {
+    throw new ActionError("该记录已登记发票号，发票号不可直接变更；请走财务更正");
+  }
+  if (existing.type === "RECEIVED") {
+    throw new ActionError("实收登记不可直接改额；待确认请退回后重新登记，已确认请走财务更正或登记退款");
+  }
+  if (existing.type === "COMMISSION" && existing.parentFeeEntryId) {
+    throw new ActionError("自动派生的分成不可单独更正");
+  }
+  if (existing.type === "RECEIVABLE" || existing.type === "REFUND" || existing.type === "COST") {
+    // 允许更正
+  } else {
+    throw new ActionError("该类型记录不可更正");
+  }
+
+  await assertMatterWritable(existing.matterId, { allowFinanceRole: true });
+
+  await prisma.$transaction(async (tx) => {
+    await checkRoleMutation(tx, session.user, "finance.write");
+    const current = await tx.feeEntry.findUnique({
+      where: { id: data.id },
+      select: { invoiceNo: true, billing: { select: { signedAt: true } } }
+    });
+    if (!current) throw new ActionError("记录已不存在，请刷新后重试");
+    if (current.invoiceNo !== existing.invoiceNo || current.billing?.signedAt) {
+      throw new ActionError("该记录在此期间已对外开票或签署合同，请刷新后重试");
+    }
+    await tx.feeEntry.update({
+      where: { id: data.id },
+      data: {
+        amount: new Prisma.Decimal(data.amount),
+        occurredAt: data.occurredAt,
+        invoiceNo: data.invoiceNo || null,
+        payerOrPayee: data.payerOrPayee || null,
+        method: data.method || null,
+        note: data.note || null
+      }
+    });
+  });
+
+  await audit({
+    userId: session.user.id,
+    action: "FEE_ENTRY_UPDATE",
+    targetType: "FeeEntry",
+    targetId: data.id,
+    detail: {
+      matterId: existing.matterId,
+      type: existing.type,
+      amount: data.amount,
+      occurredAt: data.occurredAt.toISOString(),
+      invoiceNo: data.invoiceNo || null
+    }
+  });
+  await revalidateMatter(existing.matterId);
   revalidatePath("/finance");
   revalidatePath("/approvals");
   return { ok: true };

@@ -113,7 +113,10 @@ describe("convertIntakeToMatter", () => {
   it("共同诉讼人也必须完成带身份的检索，不能漏查后转案", async () => {
     prismaMock.intake.findUnique.mockResolvedValue({ id: "intake-1", category: "CIVIL_COMMERCIAL", createdById: "applicant", status: "PENDING_CONFIRMATION", client: null,
       parties: [{ role: "CO_LITIGANT", name: "测试共同诉讼人", idNumber: null }], conflictChecks: validConflictChecks(), documents: [] });
-    await expect(convertIntakeToMatter("intake-1")).rejects.toThrow("共同诉讼人「测试共同诉讼人」");
+    await expect(convertIntakeToMatter("intake-1")).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining("共同诉讼人「测试共同诉讼人」")
+    });
     expect(txMock.matter.create).not.toHaveBeenCalled();
   });
   it("未配置事项权限时，普通律师不能转案", async () => {
@@ -251,9 +254,10 @@ describe("convertIntakeToMatter", () => {
       documents: []
     });
 
-    await expect(convertIntakeToMatter("intake-1")).rejects.toThrow(
-      "转为正式案件前必须先运行利益冲突检索"
-    );
+    await expect(convertIntakeToMatter("intake-1")).resolves.toMatchObject({
+      ok: false,
+      error: "转为正式案件前必须先运行利益冲突检索"
+    });
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
@@ -276,9 +280,10 @@ describe("convertIntakeToMatter", () => {
       documents: []
     });
 
-    await expect(convertIntakeToMatter("intake-1")).rejects.toThrow(
-      "存在高风险或阻塞命中"
-    );
+    await expect(convertIntakeToMatter("intake-1")).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining("存在高风险或阻塞命中")
+    });
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 });

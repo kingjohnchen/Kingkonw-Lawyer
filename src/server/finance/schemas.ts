@@ -42,6 +42,19 @@ export const feeEntryCreateSchema = z.object({
   note: z.string().max(500).optional().or(z.literal(""))
 });
 
+export const feeEntryUpdateSchema = z.object({
+  id: z.string().cuid(),
+  amount: z.coerce.number().positive("金额必须大于 0").max(99_999_999.99, "金额超出范围"),
+  occurredAt: z.preprocess(
+    v => (v === "" ? undefined : v),
+    z.coerce.date({ required_error: "请选择收付日期", invalid_type_error: "请选择收付日期" })
+  ),
+  invoiceNo: z.string().max(50).optional().or(z.literal("")),
+  payerOrPayee: z.string().max(80).optional().or(z.literal("")),
+  method: z.string().max(40).optional().or(z.literal("")),
+  note: z.string().max(500).optional().or(z.literal(""))
+});
+
 export const commissionPlanSetSchema = z.object({
   matterId: z.string().cuid(),
   items: z
@@ -69,4 +82,5 @@ export const commissionPlanSetSchema = z.object({
 
 export type BillingCreateInput = z.infer<typeof billingCreateSchema>;
 export type FeeEntryCreateInput = z.infer<typeof feeEntryCreateSchema>;
+export type FeeEntryUpdateInput = z.infer<typeof feeEntryUpdateSchema>;
 export type CommissionPlanSetInput = z.infer<typeof commissionPlanSetSchema>;
