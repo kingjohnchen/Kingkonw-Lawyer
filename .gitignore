@@ -53,3 +53,7 @@ outputs/
 
 # Local test and browser artifacts are not release content
 output/
+
+# Local plugin/tool markers with machine-specific absolute paths
+.v2c/
+.video_agent/
